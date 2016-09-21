@@ -1,4 +1,4 @@
-#setwd("C:/Users/vera/Documents/Kaggle/Titanic");
+setwd("C:/Users/vera/Documents/Kaggle/Titanic");
 setwd("C:/Users/v.aleksandrovskaya/Documents/Titanic")
 source(paste0(getwd(),'/Mode.r'))
 
