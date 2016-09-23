@@ -385,6 +385,11 @@ sqldf(
   "
 )
 
+#______________________________family code____________________________
+
+all_data$FamilyCode <- mergeMaiden$Name_mod
+all_data[is.na(all_data$FamilyCode) == T,]$FamilyCode <- all_data[is.na(all_data$FamilyCode) == T,]$Ticket
+
 #______________________________COMPANY SIZE new____________________________
 
 sub <-
@@ -401,21 +406,19 @@ all_data$CompanySizeNew <-
 
 # #______________________________FAMILY SURVIVAL RATE new____________________________
 
-all_data$FamilyCode <- mergeMaiden$Name_mod
-all_data[is.na(all_data$FamilyCode) == T,]$FamilyCode <- all_data[is.na(all_data$FamilyCode) == T,]$Ticket
 
 
 all_data$FamiliSurvRateNew <-NA
-
-all_data$SurvivedMod <- NA
-
-all_data[is.na(all_data$Survived) == F & all_data$Survived == "yes",]$SurvivedMod <- 1
-all_data[is.na(all_data$Survived) == F & all_data$Survived == "no",]$SurvivedMod <- 0
 # 
+# all_data$SurvivedMod <- NA
+# 
+# all_data[is.na(all_data$Survived) == F & all_data$Survived == "yes",]$SurvivedMod <- 1
+# all_data[is.na(all_data$Survived) == F & all_data$Survived == "no",]$SurvivedMod <- 0
+# # 
 # all_data[is.na(all_data$Survived) == T,]$SurvivedMod <- 0
 
 subFam <-
-  aggregate(all_data[all_data$smp == "train",]$SurvivedMod, by = list(FamilyCode = all_data[all_data$smp == "train",]$FamilyCode), FUN =
+  aggregate(all_data[all_data$smp == "train",]$Survived, by = list(FamilyCode = all_data[all_data$smp == "train",]$FamilyCode), FUN =
               mean)
 
 mergedf <- merge(all_data, subFam, by.x = "FamilyCode", by.y = "FamilyCode", sort = F)
@@ -429,19 +432,55 @@ all_data$FamiliSurvRateNew <-
 #______________________________ Survival rate for singles new______________________________ 
 
 set.seed(111)
-survrpart <- rpart(
-  FamiliSurvRateNew ~ Pclass + Sex + Age + SibSp + Parch +
-    Embarked + RoomSector + RoomBin +
-    Titul + FamilySize + CompanySizeNew + FarePerPerson + IsMother1 + IsFather + Town + IsFather,
-  data = all_data, method = "anova", control = rpart.control(minsplit = 2, cp = 0.012) #0.0061
-)
+survNFs <-
+  randomForest(
+    FamiliSurvRateNew ~ Pclass + Sex + Age + SibSp + Parch +
+      Embarked + RoomSector + RoomBin +
+      Titul + FamilySize + CompanySizeNew + FarePerPerson + IsMother1 + IsFather + Town + IsFather,
+    data = all_data[all_data$CompanySizeNew == 1,], importance = T , ntree = 10000
+  );
 
-plotcp(survrpart)
 
-fancyRpartPlot(survrpart)
+print(survNFs)
 
-all_data[!is.na(all_data$FamiliSurvRateNew) == F,]$FamiliSurvRateNew <-
-  predict(survrpart, all_data[!is.na(all_data$FamiliSurvRateNew) == F,], type = "vector")
+
+varImpPlot(survNFs);
+
+# 
+# 
+# survrpart <- rpart(
+#   FamiliSurvRateNew ~ Pclass + Sex + Age + SibSp + Parch +
+#     Embarked + RoomSector + RoomBin +
+#     Titul + FamilySize + CompanySizeNew + FarePerPerson + IsMother1 + IsFather + Town + IsFather,
+#   data = all_data[all_data$CompanySizeNew == 1,], method = "anova", control = rpart.control(minsplit = 2, cp = 0.023) #0.0061
+# )
+# 
+# plotcp(survrpart)
+# 
+# fancyRpartPlot(survrpart)
+
+all_data[!is.na(all_data$FamiliSurvRateNew) == F & all_data$CompanySizeNew == 1,]$FamiliSurvRateNew <-
+  predict(survNFs, all_data[!is.na(all_data$FamiliSurvRateNew) == F & all_data$CompanySizeNew == 1,], type = "response")
+
+#_____ 
+set.seed(111)
+survNFs <-
+  randomForest(
+    FamiliSurvRateNew ~ Pclass + Sex + Age + SibSp + Parch +
+      Embarked + RoomSector + RoomBin +
+      Titul + FamilySize + CompanySizeNew + FarePerPerson + IsMother1 + IsFather + Town + IsFather,
+    data = all_data[all_data$CompanySizeNew != 1,], importance = T , ntree = 10000
+  );
+
+
+print(survNFs)
+
+
+varImpPlot(survNFs);
+
+all_data[!is.na(all_data$FamiliSurvRateNew) == F & all_data$CompanySizeNew != 1,]$FamiliSurvRateNew <-
+  predict(survNFs, all_data[!is.na(all_data$FamiliSurvRateNew) == F & all_data$CompanySizeNew != 1,], type = "response")
+
 
 #______________________________ Рефактор______________________________
 
@@ -471,13 +510,13 @@ all_data$RoomBin <- as.factor(all_data$RoomBin);
 
 test <- all_data[all_data$smp == "test",];
 train <- all_data[all_data$smp == "train",];
-
-train1 <- train[1:600,]
-train2 <- train[601:891,]
+# 
+# train1 <- train[1:600,]
+# train2 <- train[601:891,]
 
 #________________________RANDOM FOREST____________________________
 
-install.packages("randomForest");
+#install.packages("randomForest");
 library(randomForest);
 
 set.seed(111);
@@ -486,7 +525,7 @@ survNF <-
   randomForest(
     Survived ~ Pclass + Sex + Age + SibSp + Parch +
       Embarked + RoomSector + RoomBin +
-      Titul + FamilySize + CompanySizeNew + FarePerPerson +  FamiliSurvRateNew + IsMother1 + IsFather + Town , data = train, importance = T , ntree = 10000
+      Titul + FamilySize + CompanySizeNew + FarePerPerson + FamiliSurvRateNew + IsMother1 + IsFather + Town , data = train, importance = T , ntree = 10000
   );
 
 survNF;
@@ -504,7 +543,7 @@ result <- as.data.frame(result);
 names(result)[1] <- "PassengerId";
 names(result)[2] <- "Survived";
 
-write.csv(result, "titanic_rf09230009.csv", row.names = FALSE);
+write.csv(result, "titanic_rf09232305.csv", row.names = FALSE);
 
 output <- read.csv("titanic_rf09230009.csv");
 
