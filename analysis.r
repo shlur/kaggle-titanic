@@ -1,5 +1,4 @@
-setwd("C:/Users/vera/Documents/Kaggle/Titanic");
-setwd("C:/Users/v.aleksandrovskaya/Documents/Titanic")
+setwd("C:/Users/vera/PycharmProjects/kaggle-titanic")
 source(paste0(getwd(),'/Mode.r'))
 
 #________________________SAMPLE____________________________
@@ -30,6 +29,9 @@ all_data[c(62,830),]$Embarked <- "S" # Mode for 1 Pclass
 all_data$Embarked <- as.character(all_data$Embarked)
 all_data$Embarked <- as.factor(all_data$Embarked)
 
+#________________________Corrections____________________________
+
+
 # I assume mistake in data
 all_data[c(69, 1106),]$SibSp <- 0
 all_data[c(69, 1106),]$Parch <- 0
@@ -44,6 +46,19 @@ all_data[all_data$Name == "Hansen, Mr. Henry Damsgaard", ]$SibSp <- 2
 all_data[all_data$Name == "Hansen, Mr. Henrik Juul", ]$SibSp <- 2
 all_data[all_data$Name == "Hansen, Mr. Claus Peter", ]$SibSp <- 3
 
+all_data$Ticket <- as.character(all_data$Ticket);
+
+#Elias family
+all_data[all_data$Ticket == "2660" | 
+           all_data$Ticket == "2674" |
+           all_data$Ticket == "2675" |
+           all_data$Ticket == "2689" |
+           all_data$Ticket == "2690" | 
+           all_data$Ticket == "2695",]$Ticket <- "2660"
+#Persson family
+all_data[all_data$Ticket == "347083",]$Ticket <- "347054"
+
+all_data$Ticket <- as.factor(all_data$Ticket);
 
 
 #________________________FEATURES ENGENEERING 1____________________________
@@ -293,10 +308,17 @@ all_data$MaidenName <- NA
 all_data[grep("^([^(]*\\(([^\"][^)]* )?([^\") ]+)\\).*)$", all_data$Name),]$MaidenName <-
   gsub("^([^(]*\\(([^\"][^)]* )?([^\") ]+)\\).*)$", "\\3", all_data[grep("^([^(]*\\(([^\"][^)]* )?([^\") ]+)\\).*)$", all_data$Name),]$Name)
 
-subMaiden <- all_data[is.na(all_data$MaidenName)==F & all_data$Sex == "female", ]
+
+subMaiden <- all_data[is.na(all_data$MaidenName)==F 
+                      & all_data$Sex == "female" 
+                      & all_data$MaidenName != "Elias" 
+                      & all_data$MaidenName != "Persson"
+                      & all_data$MaidenName != "Wilson"
+                      & all_data$MaidenName != "Dyker"
+                      , ]
 
 
-install.packages("sqldf")
+#install.packages("sqldf")
 
 library(sqldf)
 
@@ -339,13 +361,16 @@ mergeMaiden <- sqldf(
   LEFT JOIN ( select m.* from  subMaiden m where  m.MaidenName in (select distinct Surname from all_data)  ) as r
   ON
   L.Surname = r.MaidenName
-  AND L.Pclass = r.Pclass
+AND L.Pclass = r.Pclass
   and (L.SibSp + L.Parch >= 1)
   and (r.SibSp + r.Parch >= 1)
   and (L.age < 10 and L.Surname = r.Surname or L.age > 10)
   and (case when L.MaidenName = 'Hocking' then r.Surname <> 'Quick' else  L.Surname = r.MaidenName end)
   --or L.Name = r.Name
-  or L.Surname = r.Surname and (L.SibSp + L.Parch >=1) and (r.SibSp + r.Parch >=1) and abs(L.Ticket - r.Ticket) <5
+  or L.Surname = r.Surname 
+and (L.SibSp + L.Parch >=1) 
+and (r.SibSp + r.Parch >=1) 
+and abs(L.Ticket - r.Ticket) <5
   
   ORDER BY L.PassengerId"
 )
@@ -360,15 +385,63 @@ sqldf(
   "
 )
 
+#______________________________COMPANY SIZE new____________________________
 
-#   это только часть анализа семьи
-#   надо еще сделать отдельный алгоритм для единофамильцев с одним билетом, что бы они тоже попадали с одну семью.
-#   пример Faunthorpe
-#   и потом можно отдельно посмотреть не единофамильцев но с одним билетом и не попавших в выборку по девичьей фамилии
+sub <-
+  aggregate(
+    all_data$PassengerId / all_data$PassengerId, by = list(FamilyCode = all_data$FamilyCode), FUN =
+      sum
+  );
 
-# 2 чувака Ali, мб отнести к 1 семье? 
-# Elias 3 чувака их отнести к 1 семье, разны е билеты, и возможно кого-то еще, там их много
+mergedf <- merge(all_data, sub, by.x = "FamilyCode", by.y = "FamilyCode", sort = F);
 
+all_data$CompanySizeNew <-
+  mergedf[order(mergedf$PassengerId), ]$x;
+
+
+# #______________________________FAMILY SURVIVAL RATE new____________________________
+
+all_data$FamilyCode <- mergeMaiden$Name_mod
+all_data[is.na(all_data$FamilyCode) == T,]$FamilyCode <- all_data[is.na(all_data$FamilyCode) == T,]$Ticket
+
+
+all_data$FamiliSurvRateNew <-NA
+
+all_data$SurvivedMod <- NA
+
+all_data[is.na(all_data$Survived) == F & all_data$Survived == "yes",]$SurvivedMod <- 1
+all_data[is.na(all_data$Survived) == F & all_data$Survived == "no",]$SurvivedMod <- 0
+# 
+# all_data[is.na(all_data$Survived) == T,]$SurvivedMod <- 0
+
+subFam <-
+  aggregate(all_data[all_data$smp == "train",]$SurvivedMod, by = list(FamilyCode = all_data[all_data$smp == "train",]$FamilyCode), FUN =
+              mean)
+
+mergedf <- merge(all_data, subFam, by.x = "FamilyCode", by.y = "FamilyCode", sort = F)
+
+mergedf_all <- merge(all_data, mergedf, by.x = "PassengerId", by.y = "PassengerId", sort = F, all.x= T)
+
+all_data$FamiliSurvRateNew <-
+  mergedf_all[order(mergedf_all$PassengerId), ]$x
+
+
+#______________________________ Survival rate for singles new______________________________ 
+
+set.seed(111)
+survrpart <- rpart(
+  FamiliSurvRateNew ~ Pclass + Sex + Age + SibSp + Parch +
+    Embarked + RoomSector + RoomBin +
+    Titul + FamilySize + CompanySizeNew + FarePerPerson + IsMother1 + IsFather + Town + IsFather,
+  data = all_data, method = "anova", control = rpart.control(minsplit = 2, cp = 0.012) #0.0061
+)
+
+plotcp(survrpart)
+
+fancyRpartPlot(survrpart)
+
+all_data[!is.na(all_data$FamiliSurvRateNew) == F,]$FamiliSurvRateNew <-
+  predict(survrpart, all_data[!is.na(all_data$FamiliSurvRateNew) == F,], type = "vector")
 
 #______________________________ Рефактор______________________________
 
@@ -399,6 +472,9 @@ all_data$RoomBin <- as.factor(all_data$RoomBin);
 test <- all_data[all_data$smp == "test",];
 train <- all_data[all_data$smp == "train",];
 
+train1 <- train[1:600,]
+train2 <- train[601:891,]
+
 #________________________RANDOM FOREST____________________________
 
 install.packages("randomForest");
@@ -410,10 +486,13 @@ survNF <-
   randomForest(
     Survived ~ Pclass + Sex + Age + SibSp + Parch +
       Embarked + RoomSector + RoomBin +
-      Titul + FamilySize + CompanySize + FarePerPerson + FamiliSurvRate + IsMother1 + IsFather + Town , data = train, importance = T, ntree = 10000
+      Titul + FamilySize + CompanySizeNew + FarePerPerson +  FamiliSurvRateNew + IsMother1 + IsFather + Town , data = train, importance = T , ntree = 10000
   );
 
 survNF;
+
+print(survNF)
+
 
 varImpPlot(survNF);
 
@@ -425,9 +504,9 @@ result <- as.data.frame(result);
 names(result)[1] <- "PassengerId";
 names(result)[2] <- "Survived";
 
-write.csv(result, "titanic_rf09180216.csv", row.names = FALSE);
+write.csv(result, "titanic_rf09230009.csv", row.names = FALSE);
 
-output <- read.csv("titanic_rf09180216.csv");
+output <- read.csv("titanic_rf09230009.csv");
 
 #________________________DESICION TREE____________________________
 
